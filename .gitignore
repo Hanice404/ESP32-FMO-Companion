@@ -1,0 +1,18 @@
+# 构建产物
+build/out/
+*.bin.bak
+*.elf
+*.map
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 串口日志 / 抓屏中间文件
+*.raw
+*.log
+
+# 你自己的本地配置（若把 Config.h 改成带 WiFi 的版本，别提交）
+# src/FmoCompanion/Config.local.h
