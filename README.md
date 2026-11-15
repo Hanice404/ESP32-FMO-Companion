@@ -103,30 +103,27 @@ esp32:esp32:waveshare_esp32_s3_touch_lcd_185:PartitionScheme=app3M_fat9M_16MB,CD
 
 依赖只有 `libs/ArduinoJson`（单头文件，已随仓库提供）。
 
-### 2.3 首次配网（重要）
+### 2.3 配网（两种方式，任选）
 
-固件出厂**不带 WiFi 账号**，第一次开机屏幕会显示：
-
-```
-未配置 WiFi
-串口发 wifi SSID 密码
-```
-
-用任意串口工具（115200，8N1）连上板子，发送：
+固件出厂**不带任何 WiFi 账号**。第一次开机如果没配网，会自动进入「配网模式」：
 
 ```
-wifi 你的SSID 你的密码
+① 手机连热点   FMO-Companion     （2.4 GHz，无密码）
+② 浏览器打开   192.168.4.1       （连上通常会自动弹出）
+③ 选你的 WiFi、填密码、（可选）填 FMO 地址 → 保存并重启
 ```
 
-板子会保存到 NVS 并立刻重启联网。然后告诉它 FMO 设备在哪：
+屏幕上会同步显示这三步。**注意 ESP32 只支持 2.4 GHz**，5 GHz 的 SSID 连不上。
 
-```
-host 192.168.50.163
-```
+**以后想重配**（换路由器 / 密码改了 / 想换 FMO 设备）：
 
-> 也可以不设 `host`：固件默认用 mDNS 名 **`fmo.local`** 解析（FMO 官方 App 用的也是这个名字）。
-> 网络里的 mDNS 被禁用（常见于部分路由器/AP 隔离）时，才需要 `host` 指定固定 IP。
-> 这两条命令也可以写在 `src/FmoCompanion/Config.h` 里再编译（`WIFI_SSID` / `WIFI_PASS` / `FMO_FALLBACK_IP`）。
+- 断电，**按住 BOOT 再上电**（按住约 2 秒），就会重新进配网模式；或
+- 串口（115200）发 `wifireset` 清空并重启进配网；或
+- 串口直接发 `wifi 你的SSID 你的密码`（最快，不用手机）。
+
+**FMO 设备地址**可以留空：固件默认用 mDNS 名 **`fmo.local`** 解析（FMO 官方 App 用的也是这个名字）。
+网络里 mDNS 被禁用（部分路由器 / AP 隔离）时，才需要在配网页或串口 `host 192.168.50.163` 指定固定 IP。
+这些都能写在 `src/FmoCompanion/Config.h` 里再编译（`WIFI_SSID` / `WIFI_PASS` / `FMO_FALLBACK_IP`）。
 
 ---
 
@@ -156,7 +153,7 @@ telnet <板子IP> 2323
 | `tone [ms]` | 喇叭自检（1 kHz 正弦，默认 1 s） |
 | `audio 0\|1` / `gain N` / `bright N` | 音频 / 音量 / 背光 |
 | `srot 0..3` | 屏幕方向 0°/90°/180°/270°（默认 180°） |
-| `wifi SSID PASS` / `host IP` | 配网 / 指定 FMO 地址（持久保存） |
+| `wifi SSID PASS` / `wifireset` / `host IP` | 配网 / 清空配网并进门户 / 指定 FMO 地址（都持久保存） |
 | `refresh` / `prep` / `reboot` | 重拉数据 / 烧录前礼貌断连 / 重启 |
 
 `tools/` 里有 `snapnet.ps1`（TCP 抓屏）、`shot2png.ps1`（抓屏转 PNG）。

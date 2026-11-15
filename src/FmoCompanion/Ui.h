@@ -16,6 +16,7 @@ class Ui {
 
   void begin(FmoClient* fmo, AudioOut* audio);
   void splash();
+  void portalScreen(const char* apName, const char* host);   // 配网模式提示页
   void render(bool force);
   void invalidate() { _dirty = true; }
 

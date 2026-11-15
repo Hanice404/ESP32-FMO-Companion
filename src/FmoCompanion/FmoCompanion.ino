@@ -21,6 +21,14 @@
 #include "I2C_Driver.h"
 #include "PWR_Key.h"
 #include "Settings.h"
+#include <WebServer.h>
+#include <DNSServer.h>
+
+// ---------------------------------------------------------------- 配网门户（AP）
+volatile bool g_portal = false;      // true 时 netTask 不联网，loop 里跑 HTTP
+static WebServer* g_web = nullptr;
+static DNSServer* g_dns = nullptr;
+static String g_apOptions;           // 附近 WiFi 下拉项（开机扫一次，渲染页面时不再扫，避免阻塞
 #include "TCA9554PWR.h"
 #include "Touch_CST816.h"
 #include "Ui.h"
@@ -58,6 +66,113 @@ void dbgLog(const char* fmt, ...) {
   va_end(ap);
   Serial.print(buf);
   if (g_dbgClient && g_dbgClient.connected()) g_dbgClient.print(buf);
+}
+
+// ------------------------------------------------------------------ 配网门户（手机连热点填 WiFi）
+static String portalPage() {
+  DBG("[portal] GET /\n");
+  String s;
+  s.reserve(2600);
+  s += F("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>");
+  s += F("<title>FMO Companion 配网</title><style>");
+  s += F("body{font-family:system-ui,sans-serif;background:#0b0f0d;color:#e6efe9;margin:0;padding:22px}");
+  s += F("h1{font-size:19px;color:#3ddc84;margin:0 0 6px}small{color:#6d7f76;line-height:1.5}");
+  s += F("label{display:block;margin:16px 0 6px;color:#9fb3a8;font-size:14px}");
+  s += F("input,select{width:100%;box-sizing:border-box;padding:11px;border-radius:9px;border:1px solid #2b3a33;background:#131a17;color:#e6efe9;font-size:16px}");
+  s += F("button{margin-top:22px;width:100%;padding:14px;border:0;border-radius:10px;background:#3ddc84;color:#04120a;font-size:17px;font-weight:600}");
+  s += F("</style>");
+  s += F("<h1>FMO Companion 配网</h1><small>选一个 2.4 GHz 网络、填密码，保存后设备自动重启并连接。</small>");
+  s += F("<form method=post action=/save>");
+
+  if (g_apOptions.length()) {
+    s += F("<label>附近的 WiFi</label><select name=ssid>");
+    s += g_apOptions;
+    s += F("</select>");
+  }
+
+  s += F("<label>或手动输入 SSID（优先）</label><input name=ssid2 placeholder=\"你的 WiFi 名称\" autocomplete=off>");
+  s += F("<label>密码</label><input name=pass type=password placeholder=\"WiFi 密码\">");
+  s += F("<label>FMO 设备地址（留空则用 fmo.local）</label><input name=host placeholder=\"192.168.50.163\" autocomplete=off>");
+  s += F("<button>保存并重启</button></form>");
+  s += F("<p><small>当前：");
+  s += settings::wifiConfigured() ? (String("已保存 WiFi「") + settings::wifiSsid() + "」") : String("尚未配置 WiFi");
+  if (settings::fmoHost().length()) {
+    s += F("，FMO=");
+    s += settings::fmoHost();
+  }
+  s += F("</small></p>");
+  return s;
+}
+
+static void handlePortalSave() {
+  DBG("[portal] POST /save\n");
+  String ssid = g_web->arg("ssid2");
+  ssid.trim();
+  if (!ssid.length()) ssid = g_web->arg("ssid");
+  const String pass = g_web->arg("pass");
+  String host = g_web->arg("host");
+  host.trim();
+
+  String html = F("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>");
+  html += F("<body style='font-family:system-ui;background:#0b0f0d;color:#e6efe9;padding:24px'>");
+  if (ssid.length() >= 1) {
+    settings::setWifi(ssid, pass);
+    if (host.length()) settings::setFmoHost(host);
+    settings::flush();
+    html += F("<h2 style='color:#3ddc84'>已保存</h2><p>WiFi：");
+    html += ssid;
+    html += F("</p><p>设备正在重启并连接，稍后屏幕会显示频道信息。</p>");
+    DBG("[portal] saved ssid=%s host=%s\n", ssid.c_str(), host.c_str());
+  } else {
+    html += F("<h2 style='color:#ff6b6b'>SSID 不能为空</h2><p>返回上一页重试。</p>");
+  }
+  html += F("</body>");
+  g_web->send(200, "text/html; charset=utf-8", html);
+
+  if (ssid.length() >= 1) {
+    delay(600);
+    ESP.restart();
+  }
+}
+
+static void startPortal() {
+  WiFi.persistent(false);
+
+  // 先在 STA 模式扫一次附近网络，缓存成下拉项（之后渲染页面不再扫，避免阻塞/掉线）
+  WiFi.mode(WIFI_STA);
+  delay(120);
+  const int n = WiFi.scanNetworks();
+  g_apOptions = "";
+  for (int i = 0; i < n && i < 20; i++) {
+    const String ssid = WiFi.SSID(i);
+    if (!ssid.length()) continue;
+    g_apOptions += F("<option value=\"");
+    g_apOptions += ssid;
+    g_apOptions += F("\">");
+    g_apOptions += ssid;
+    g_apOptions += F(" (");
+    g_apOptions += String(WiFi.RSSI(i));
+    g_apOptions += F(" dBm)</option>");
+  }
+  DBG("[portal] scanned %d networks, %d listed\n", n, (int)(g_apOptions.length() > 0));
+
+  WiFi.mode(WIFI_AP_STA);
+  delay(80);
+  WiFi.softAP("FMO-Companion");
+  const IPAddress ip = WiFi.softAPIP();
+  g_dns = new DNSServer();
+  g_dns->start(53, "*", ip);            // 连上热点会自动弹出配网页
+  g_web = new WebServer(80);
+  g_web->on("/", []() { g_web->send(200, "text/html; charset=utf-8", portalPage()); });
+  g_web->on("/save", HTTP_POST, handlePortalSave);
+  g_web->onNotFound([]() {
+    g_web->sendHeader("Location", "http://192.168.4.1/", true);
+    g_web->send(302, "text/plain", "");
+  });
+  g_web->begin();
+  g_portal = true;
+  DBG("[portal] AP \"FMO-Companion\" up at %s\n", ip.toString().c_str());
+  g_ui.portalScreen("FMO-Companion", settings::fmoHost().c_str());
 }
 
 // ------------------------------------------------------------------ 触摸坐标变换
@@ -163,6 +278,12 @@ static void runCommand(const char* buf, Print& out) {
     g_fmo.setHost(g_host);
     g_audio.setTarget(g_host.c_str());
     out.printf("[cmd] host=%s (saved)\n", g_host.c_str());
+  } else if (strcmp(buf, "wifireset") == 0) {
+    settings::setWifi("", "");
+    settings::flush();
+    out.printf("[cmd] wifi cleared, rebooting into config portal...\n");
+    delay(150);
+    ESP.restart();
   } else if (strncmp(buf, "wifi ", 5) == 0) {
     char ssid[40] = {0};
     char pass[64] = {0};
@@ -215,7 +336,7 @@ static void runCommand(const char* buf, Print& out) {
   } else if (strcmp(buf, "help") == 0) {
     out.printf("[cmd] stat | shot | page 0/1/2 | tap X Y | swipe l/r | refresh | tone [ms] | prep\n");
     out.printf("      audio 0/1 | gain N | bright N | srot N | host IP | fakecall CALL | reboot\n");
-    out.printf("      wifi SSID PASSWORD  (保存 WiFi 并重启)\n");
+    out.printf("      wifi SSID PASSWORD  (保存 WiFi 并重启) | wifireset (清空并进配网门户)\n");
     out.printf("      (音频开关：长按 BOOT 键，或 audio 0/1)\n");
   } else {
     out.printf("[cmd] unknown: %s\n", buf);
@@ -361,6 +482,8 @@ static bool g_bootArmed = false;     // 见到松开才武装，避免上电/烧
 static bool g_bootFired = false;
 static uint32_t g_tBoot = 0;
 
+
+
 static void handleBootKey() {
   const bool down = (digitalRead(KEY_BOOT_PIN) == LOW);
   const uint32_t now = millis();
@@ -492,7 +615,17 @@ void setup() {
     DBG("[audio] restored ON (gain %u)\n", (unsigned)settings::gain());
   }
 
-  // 10. 客户端 + 网络任务
+  // 10. 配网判定：没保存 WiFi，或开机时按住 BOOT → 进配网门户
+  const bool bootHeldAtStart = (digitalRead(KEY_BOOT_PIN) == LOW);
+  if (!settings::wifiConfigured() || bootHeldAtStart) {
+    DBG("[boot] entering config portal (wifiConfigured=%d bootHeld=%d)\n",
+        (int)settings::wifiConfigured(), (int)bootHeldAtStart);
+    startPortal();
+  } else {
+    DBG("[boot] wifi ssid=%s\n", settings::wifiSsid().c_str());
+  }
+
+  // 11. 客户端 + 网络任务
   g_fmo.begin();
   xTaskCreatePinnedToCore(netTask, "net", 8192, nullptr, 4, nullptr, 0);
   xTaskCreatePinnedToCore(audioTask, "audio", 4096, nullptr, 3, nullptr, 1);
@@ -507,6 +640,14 @@ void loop() {
   if (g_shotRequest) {
     g_shotRequest = false;
     dumpShot(Serial);
+  }
+
+  if (g_portal) {
+    if (g_web) g_web->handleClient();
+    if (g_dns) g_dns->processNextRequest();
+    handleSerial();
+    vTaskDelay(pdMS_TO_TICKS(2));
+    return;
   }
 
   handleSerial();

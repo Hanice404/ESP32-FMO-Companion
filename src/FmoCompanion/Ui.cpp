@@ -518,13 +518,37 @@ void Ui::render(bool force) {
   flush();
 }
 
+// ------------------------------------------------------------------ 配网模式
+void Ui::portalScreen(const char* apName, const char* host) {
+  clear(C_BG);
+  circle(CX, CX, 176, C_LINE, 1);
+  circle(CX, CX, 120, C_PANEL, 2);
+
+  textCenter(CX, 62, "配网模式", 24, C_ACCENT, 1, 260);
+  textCenter(CX, 100, "5 GHz 连不上，请用 2.4 GHz", 16, C_DIM, 1, 300);
+
+  textCenter(CX, 132, "① 手机连热点", 16, C_TEXT, 1, 260);
+  textCenter(CX, 152, apName, 24, C_ACCENT, 1, 300);
+
+  textCenter(CX, 196, "② 浏览器打开", 16, C_TEXT, 1, 260);
+  textCenter(CX, 216, "192.168.4.1", 24, C_AMBER, 1, 300);
+
+  textCenter(CX, 258, "③ 填 WiFi 名称与密码 → 保存", 16, C_TEXT, 1, 320);
+
+  if (host && host[0]) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "FMO 地址: %s", host);
+    textCenter(CX, 288, buf, 16, C_DIM, 1, 300);
+  }
+  flush();
+}
 void Ui::splash() {
   clear(C_BG);
   circle(CX, CX, 150, C_LINE, 1);
   circle(CX, CX, 120, C_PANEL, 2);
   textCenter(CX, 130, "FMO", 24, C_ACCENT, 2, 240);
   textCenter(CX, 182, "COMPANION", 16, C_TEXT, 1, 240);
-  textCenter(CX, 208, "频道 · 音频 · 电台", 16, C_DIM, 1, 240);
+  textCenter(CX, 208, "频道 · 电台 · 音量亮度", 16, C_DIM, 1, 260);
   textCenter(CX, 232, "ESP32-S3  ·  360x360", 16, C_LINE, 1, 240);
   fillRect(CX - 60, 262, 120, 2, C_LINE);
   fillRect(CX - 60, 262, 40, 2, C_ACCENT);
