@@ -209,7 +209,9 @@ void FmoClient::onText(const char* json, size_t len) {
 // ------------------------------------------------------------------ 轮询
 void FmoClient::pollTimers(uint32_t now) {
   if (_qh != _qt) return;
-  if (_tInfo == 0 || now - _tInfo > POLL_INFO_MS) {
+  // 身份拉取失败（设备忙 / 刚重连）时快速重试，别让呼号空着等 2 分钟
+  const uint32_t infoGap = _s.hasInfo ? POLL_INFO_MS : 15000;
+  if (_tInfo == 0 || now - _tInfo > infoGap) {
     _tInfo = now;
     enqueue("user", "getInfo", "{}");
     return;
