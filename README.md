@@ -15,6 +15,22 @@ FMO 设备 ──WiFi 局域网── ESP32-S3 ──QSPI──▶ 1.85" 360×36
 
 ---
 
+## ⚡ 快速开始（烧录 + 配置 WiFi，3 步）
+
+**固件不带任何 WiFi 账号，烧完必须配网一次**（不用串口，手机就能配）：
+
+| 步骤 | 做什么 |
+|---|---|
+| **1. 烧固件** | `pip install esptool` → `cd firmware` → Windows `.\flash.ps1 -Port COM5`　/　macOS·Linux `./flash.sh /dev/ttyACM0` |
+| **2. 配 WiFi** | 板子开机自动开热点 **`FMO-Companion`**（2.4 GHz，无密码）→ 手机连它 → 浏览器打开 **`192.168.4.1`** → 选你的 WiFi、填密码 →（可填 FMO 地址，不填就用 `fmo.local`）→ 保存并重启 |
+| **3. 收工** | 板子重启后自动联网，屏幕显示频道名与发言人；长按 **BOOT** 开/关语音 |
+
+> 屏幕只支持 **2.4 GHz** 的 WiFi；5 GHz 的 SSID 连不上（选 2.4 GHz 的那个）。
+> 以后要换 WiFi / 换 FMO 设备：**断电 → 按住 BOOT 再上电**，或串口发 `wifireset`，会重新进配网模式。
+> 也可以在 `src/FmoCompanion/Config.h` 里把 `WIFI_SSID` / `WIFI_PASS` 写死后编译，见 [2.3](#23-配网两种方式任选)。
+
+---
+
 ## 1. 功能
 
 | 屏 | 内容 |
